@@ -12,7 +12,7 @@ public interface ILabJobStore
         LabJob job,
         CancellationToken cancellationToken);
 
-    ValueTask<LabJob?> FindAsync(
+    ValueTask<LabJobSnapshot?> FindAsync(
         Guid jobId,
         CancellationToken cancellationToken);
 }

@@ -21,6 +21,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Labs.Runtime.Core\Labs.Runtime.Core.csproj" />
     <ProjectReference Include="..\..\src\Labs.Runtime.Application\Labs.Runtime.Application.csproj" />
+    <ProjectReference Include="..\..\src\Labs.Runtime.Infrastructure\Labs.Runtime.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>

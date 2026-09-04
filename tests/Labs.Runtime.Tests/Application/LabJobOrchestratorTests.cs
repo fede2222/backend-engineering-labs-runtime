@@ -185,12 +185,12 @@ public sealed class LabJobOrchestratorTests
             return ValueTask.CompletedTask;
         }
 
-        public ValueTask<LabJob?> FindAsync(
+        public ValueTask<LabJobSnapshot?> FindAsync(
             Guid jobId,
             CancellationToken cancellationToken)
         {
             return ValueTask.FromResult(
-                _job?.Id == jobId ? _job : null);
+                _job?.Id == jobId ? LabJobSnapshot.From(_job) : null);
         }
     }
 
