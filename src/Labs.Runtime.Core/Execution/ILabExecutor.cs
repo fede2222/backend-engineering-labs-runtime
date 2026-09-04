@@ -6,7 +6,17 @@ public interface ILabExecutor
 {
     string Type { get; }
 
+    Task PrepareAsync(
+        LabExecutionContext context,
+        Func<LabOutput, CancellationToken, ValueTask> publishOutput,
+        CancellationToken cancellationToken);
+
     Task<LabExecutionResult> ExecuteAsync(
+        LabExecutionContext context,
+        Func<LabOutput, CancellationToken, ValueTask> publishOutput,
+        CancellationToken cancellationToken);
+
+    Task CleanupAsync(
         LabExecutionContext context,
         Func<LabOutput, CancellationToken, ValueTask> publishOutput,
         CancellationToken cancellationToken);

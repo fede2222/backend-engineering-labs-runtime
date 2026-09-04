@@ -3,6 +3,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Labs.Runtime.Core\Labs.Runtime.Core.csproj" />
     <ProjectReference Include="..\Labs.Runtime.Infrastructure\Labs.Runtime.Infrastructure.csproj" />
+    <ProjectReference Include="..\Labs.Runtime.Application\Labs.Runtime.Application.csproj" />
   </ItemGroup>
 
   <PropertyGroup>
