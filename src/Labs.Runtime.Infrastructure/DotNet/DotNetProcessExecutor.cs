@@ -1,3 +1,4 @@
+using System.Globalization;
 using Labs.Runtime.Core.Execution;
 using Labs.Runtime.Core.Output;
 using Labs.Runtime.Infrastructure.Processes;
@@ -55,17 +56,7 @@ public sealed class DotNetProcessExecutor : ILabExecutor
 
         var projectPath = ResolveProjectPath(context.Lab.Id);
         var sequence = 0L;
-        var command = new ProcessCommand(
-            _options.DotNetExecutable,
-            Path.GetDirectoryName(projectPath)!,
-            new[]
-            {
-                "run",
-                "--project",
-                projectPath,
-                "--no-launch-profile",
-                "--nologo"
-            });
+        var command = CreateRunCommand(context.JobId, projectPath);
 
         var exitCode = await _processRunner.RunAsync(
             command,
@@ -89,10 +80,10 @@ public sealed class DotNetProcessExecutor : ILabExecutor
             : new LabExecutionResult(
                 LabExecutionOutcome.Failed,
                 ExitCode: exitCode,
-                FailureReason: $"dotnet exited with code {exitCode}.");
+                FailureReason: $"docker exited with code {exitCode}.");
     }
 
-    public Task CleanupAsync(
+    public async Task CleanupAsync(
         LabExecutionContext context,
         Func<LabOutput, CancellationToken, ValueTask> publishOutput,
         CancellationToken cancellationToken)
@@ -100,7 +91,93 @@ public sealed class DotNetProcessExecutor : ILabExecutor
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(publishOutput);
         cancellationToken.ThrowIfCancellationRequested();
-        return Task.CompletedTask;
+
+        var command = new ProcessCommand(
+            _options.DockerExecutable,
+            _options.LabsRoot,
+            new[]
+            {
+                "container",
+                "rm",
+                "--force",
+                "--volumes",
+                GetContainerName(context.JobId)
+            });
+
+        _ = await _processRunner.RunAsync(
+            command,
+            static (_, _) => ValueTask.CompletedTask,
+            cancellationToken);
+    }
+
+    private ProcessCommand CreateRunCommand(Guid jobId, string projectPath)
+    {
+        var projectDirectory = Path.GetDirectoryName(projectPath)!;
+        var containerProjectPath = $"/lab/{Path.GetFileName(projectPath)}";
+        var cpuLimit = _options.CpuLimit.ToString(
+            "0.###",
+            CultureInfo.InvariantCulture);
+
+        return new ProcessCommand(
+            _options.DockerExecutable,
+            _options.LabsRoot,
+            new[]
+            {
+                "run",
+                "--rm",
+                "--pull",
+                "never",
+                "--name",
+                GetContainerName(jobId),
+                "--network",
+                "none",
+                "--memory",
+                $"{_options.MemoryLimitMegabytes}m",
+                "--memory-swap",
+                $"{_options.MemoryLimitMegabytes}m",
+                "--cpus",
+                cpuLimit,
+                "--pids-limit",
+                _options.PidsLimit.ToString(CultureInfo.InvariantCulture),
+                "--read-only",
+                "--cap-drop",
+                "ALL",
+                "--security-opt",
+                "no-new-privileges",
+                "--user",
+                _options.ContainerUser,
+                "--tmpfs",
+                $"/tmp:rw,nosuid,nodev,size={_options.TempFileSystemSizeMegabytes}m,mode=1777",
+                "--mount",
+                $"type=bind,source={projectDirectory},target=/lab,readonly",
+                "--workdir",
+                "/lab",
+                "--env",
+                "DOTNET_CLI_HOME=/tmp/dotnet",
+                "--env",
+                "NUGET_PACKAGES=/tmp/nuget",
+                "--env",
+                "HOME=/tmp",
+                "--env",
+                "DOTNET_SKIP_WORKLOAD_INTEGRITY_CHECK=true",
+                "--env",
+                "DOTNET_CLI_WORKLOAD_UPDATE_NOTIFY_DISABLE=true",
+                _options.SdkImage,
+                "dotnet",
+                "run",
+                "--project",
+                containerProjectPath,
+                "--artifacts-path",
+                "/tmp/artifacts",
+                "--no-launch-profile",
+                "--nologo",
+                "-p:UseAppHost=false"
+            });
+    }
+
+    private static string GetContainerName(Guid jobId)
+    {
+        return $"backend-lab-{jobId:N}";
     }
 
     private string ResolveProjectPath(string labId)

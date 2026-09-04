@@ -13,9 +13,10 @@ public sealed class DotNetProcessExecutorTests : IDisposable
         $"labs-runtime-tests-{Guid.NewGuid():N}");
 
     [Fact]
-    public async Task ExecuteAsyncBuildsTrustedDotNetCommandAndPublishesOutput()
+    public async Task ExecuteAsyncBuildsIsolatedDockerCommandAndPublishesOutput()
     {
         var projectPath = CreateProject("process-vs-thread");
+        var jobId = Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
         var processRunner = new RecordingProcessRunner(
             0,
             new ProcessOutputChunk(
@@ -25,7 +26,7 @@ public sealed class DotNetProcessExecutorTests : IDisposable
                 LabOutputStream.StandardError,
                 "warning\n"));
         var executor = CreateExecutor(processRunner, "process-vs-thread", projectPath);
-        var context = CreateContext("process-vs-thread");
+        var context = CreateContext("process-vs-thread", jobId);
         var published = new List<LabOutput>();
 
         var result = await executor.ExecuteAsync(
@@ -39,16 +40,60 @@ public sealed class DotNetProcessExecutorTests : IDisposable
 
         Assert.Equal(LabExecutionOutcome.Succeeded, result.Outcome);
         Assert.Equal(0, result.ExitCode);
-        Assert.Equal("dotnet", processRunner.Command!.FileName);
-        Assert.Equal(Path.GetDirectoryName(projectPath), processRunner.Command.WorkingDirectory);
+        Assert.Equal("docker", processRunner.Command!.FileName);
+        Assert.Equal(_labsRoot, processRunner.Command.WorkingDirectory);
         Assert.Equal(
             new[]
             {
                 "run",
+                "--rm",
+                "--pull",
+                "never",
+                "--name",
+                "backend-lab-aaaaaaaabbbbccccddddeeeeeeeeeeee",
+                "--network",
+                "none",
+                "--memory",
+                "512m",
+                "--memory-swap",
+                "512m",
+                "--cpus",
+                "2",
+                "--pids-limit",
+                "256",
+                "--read-only",
+                "--cap-drop",
+                "ALL",
+                "--security-opt",
+                "no-new-privileges",
+                "--user",
+                "65534:65534",
+                "--tmpfs",
+                "/tmp:rw,nosuid,nodev,size=512m,mode=1777",
+                "--mount",
+                $"type=bind,source={Path.GetDirectoryName(projectPath)},target=/lab,readonly",
+                "--workdir",
+                "/lab",
+                "--env",
+                "DOTNET_CLI_HOME=/tmp/dotnet",
+                "--env",
+                "NUGET_PACKAGES=/tmp/nuget",
+                "--env",
+                "HOME=/tmp",
+                "--env",
+                "DOTNET_SKIP_WORKLOAD_INTEGRITY_CHECK=true",
+                "--env",
+                "DOTNET_CLI_WORKLOAD_UPDATE_NOTIFY_DISABLE=true",
+                "mcr.microsoft.com/dotnet/sdk:10.0",
+                "dotnet",
+                "run",
                 "--project",
-                projectPath,
+                "/lab/process-vs-thread.csproj",
+                "--artifacts-path",
+                "/tmp/artifacts",
                 "--no-launch-profile",
-                "--nologo"
+                "--nologo",
+                "-p:UseAppHost=false"
             },
             processRunner.Command.Arguments);
         Assert.Collection(
@@ -83,7 +128,37 @@ public sealed class DotNetProcessExecutorTests : IDisposable
 
         Assert.Equal(LabExecutionOutcome.Failed, result.Outcome);
         Assert.Equal(17, result.ExitCode);
-        Assert.Equal("dotnet exited with code 17.", result.FailureReason);
+        Assert.Equal("docker exited with code 17.", result.FailureReason);
+    }
+
+    [Fact]
+    public async Task CleanupAsyncForcesRemovalOfJobContainer()
+    {
+        var jobId = Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+        var projectPath = CreateProject("process-vs-thread");
+        var processRunner = new RecordingProcessRunner(0);
+        var executor = CreateExecutor(
+            processRunner,
+            "process-vs-thread",
+            projectPath);
+
+        await executor.CleanupAsync(
+            CreateContext("process-vs-thread", jobId),
+            (_, _) => ValueTask.CompletedTask,
+            CancellationToken.None);
+
+        Assert.Equal("docker", processRunner.Command!.FileName);
+        Assert.Equal(_labsRoot, processRunner.Command.WorkingDirectory);
+        Assert.Equal(
+            new[]
+            {
+                "container",
+                "rm",
+                "--force",
+                "--volumes",
+                "backend-lab-aaaaaaaabbbbccccddddeeeeeeeeeeee"
+            },
+            processRunner.Command.Arguments);
     }
 
     [Fact]
@@ -160,10 +235,12 @@ public sealed class DotNetProcessExecutorTests : IDisposable
             TimeProvider.System);
     }
 
-    private static LabExecutionContext CreateContext(string labId)
+    private static LabExecutionContext CreateContext(
+        string labId,
+        Guid? jobId = null)
     {
         return new LabExecutionContext(
-            Guid.NewGuid(),
+            jobId ?? Guid.NewGuid(),
             new LabDefinition(
                 labId,
                 labId,
