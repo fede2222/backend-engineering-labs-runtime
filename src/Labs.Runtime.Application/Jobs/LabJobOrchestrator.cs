@@ -36,14 +36,43 @@ public sealed class LabJobOrchestrator
         ArgumentException.ThrowIfNullOrWhiteSpace(labId);
         ArgumentNullException.ThrowIfNull(publishOutput);
 
+        var job = await CreateAsync(labId, cancellationToken);
+        return await RunAsync(job, publishOutput, cancellationToken);
+    }
+
+    public async Task<LabJob> CreateAsync(
+        string labId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(labId);
+
         var lab = await _labCatalog.FindAsync(labId, cancellationToken)
             ?? throw new KeyNotFoundException($"Lab '{labId}' was not found.");
 
-        var executor = _executorResolver.Resolve(lab.ExecutorType);
+        _ = _executorResolver.Resolve(lab.ExecutorType);
         var job = LabJob.Create(lab.Id, _timeProvider.GetUtcNow());
-        var context = new LabExecutionContext(job.Id, lab);
-
         await _jobStore.AddAsync(job, cancellationToken);
+        return job;
+    }
+
+    public async Task<LabJob> RunAsync(
+        LabJob job,
+        Func<LabOutput, CancellationToken, ValueTask> publishOutput,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(job);
+        ArgumentNullException.ThrowIfNull(publishOutput);
+
+        if (job.Status != LabJobStatus.Queued)
+        {
+            throw new InvalidOperationException(
+                $"Lab job '{job.Id}' must be queued before execution.");
+        }
+
+        var lab = await _labCatalog.FindAsync(job.LabId, cancellationToken)
+            ?? throw new KeyNotFoundException($"Lab '{job.LabId}' was not found.");
+        var executor = _executorResolver.Resolve(lab.ExecutorType);
+        var context = new LabExecutionContext(job.Id, lab);
 
         using var executionCancellation =
             CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);

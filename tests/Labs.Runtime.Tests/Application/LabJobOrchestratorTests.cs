@@ -17,6 +17,36 @@ public sealed class LabJobOrchestratorTests
         IgnoreOutput = static (_, _) => ValueTask.CompletedTask;
 
     [Fact]
+    public async Task CreateAsync_RegistersQueuedJobWithoutExecuting()
+    {
+        var executor = new StubExecutor();
+        var store = new RecordingJobStore();
+        var orchestrator = CreateOrchestrator(executor, store);
+
+        var job = await orchestrator.CreateAsync("process-vs-thread");
+
+        Assert.Equal(LabJobStatus.Queued, job.Status);
+        Assert.Equal(1, store.AddCount);
+        Assert.False(executor.PrepareCalled);
+        Assert.False(executor.ExecuteCalled);
+        Assert.False(executor.CleanupCalled);
+    }
+
+    [Fact]
+    public async Task RunAsync_WithCreatedJob_DoesNotRegisterJobTwice()
+    {
+        var executor = new StubExecutor();
+        var store = new RecordingJobStore();
+        var orchestrator = CreateOrchestrator(executor, store);
+        var job = await orchestrator.CreateAsync("process-vs-thread");
+
+        await orchestrator.RunAsync(job, IgnoreOutput);
+
+        Assert.Equal(1, store.AddCount);
+        Assert.Equal(LabJobStatus.Succeeded, job.Status);
+    }
+
+    [Fact]
     public async Task RunAsync_SuccessfulExecution_TraversesAllStates()
     {
         var executor = new StubExecutor();
@@ -167,11 +197,14 @@ public sealed class LabJobOrchestratorTests
 
         public List<LabJobStatus> RecordedStatuses { get; } = [];
 
+        public int AddCount { get; private set; }
+
         public ValueTask AddAsync(
             LabJob job,
             CancellationToken cancellationToken)
         {
             _job = job;
+            AddCount++;
             RecordedStatuses.Add(job.Status);
             return ValueTask.CompletedTask;
         }
