@@ -12,6 +12,6 @@ public static class BuiltInLabDefinitions
                     "process-vs-thread",
                     "Process vs Thread",
                     "dotnet",
-                    TimeSpan.FromSeconds(10))
+                    TimeSpan.FromSeconds(120))
             });
 }

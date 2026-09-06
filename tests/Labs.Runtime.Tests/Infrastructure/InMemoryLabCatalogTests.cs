@@ -17,7 +17,7 @@ public sealed class InMemoryLabCatalogTests
         Assert.NotNull(lab);
         Assert.Equal("Process vs Thread", lab.DisplayName);
         Assert.Equal("dotnet", lab.ExecutorType);
-        Assert.Equal(TimeSpan.FromSeconds(10), lab.Timeout);
+        Assert.Equal(TimeSpan.FromSeconds(120), lab.Timeout);
     }
 
     [Fact]
